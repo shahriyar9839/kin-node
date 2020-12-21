@@ -35,7 +35,7 @@ import {
     paymentsFromEnvelope,
     TransactionState,
 } from "../";
-import { errorsFromXdr, AccountDoesNotExist, AccountExists, TransactionRejected, InsufficientBalance, errorsFromProto, PayerRequired, NoSubsidizerError, AlreadySubmitted, nonRetriableErrors as nonRetriableErrorsList, BadNonce, NoTokenAccounts } from "../errors";
+import { errorsFromXdr, AccountDoesNotExist, AccountExists, TransactionRejected, InsufficientBalance, errorsFromSolanaTx, PayerRequired, NoSubsidizerError, AlreadySubmitted, nonRetriableErrors as nonRetriableErrorsList, BadNonce, NoTokenAccounts } from "../errors";
 import { ShouldRetry, retryAsync, limit, nonRetriableErrors } from "../retry";
 import BigNumber from "bignumber.js";
 import { Transaction } from "@solana/web3.js";
@@ -419,13 +419,13 @@ export class Internal {
                         return;
                     }
 
-                    return resolve(resp.getAccountInfo());
+                    return resolve(resp.getAccountInfo()!);
                 });
             });
         }, ...this.strategies);
     }
 
-    async submitSolanaTransaction(tx: SolanaTransaction, invoiceList?: commonpb.InvoiceList, commitment: Commitment = Commitment.Single): Promise<SubmitTransactionResult> {
+    async submitSolanaTransaction(tx: SolanaTransaction, invoiceList?: commonpb.InvoiceList, commitment: Commitment = Commitment.Single, dedupeId?: Buffer): Promise<SubmitTransactionResult> {
         const protoTx = new commonpbv4.Transaction();
         protoTx.setValue(tx.serialize({
             requireAllSignatures: false,
@@ -436,6 +436,9 @@ export class Internal {
         req.setTransaction(protoTx);
         req.setInvoiceList(invoiceList);
         req.setCommitment(commitmentToProto(commitment));
+        if (dedupeId) {
+            req.setDedupeId(dedupeId!);
+        }
 
         let attempt = 0;
         return retryAsync(() => {
@@ -477,7 +480,7 @@ export class Internal {
                             break;
                         }
                         case transactionpbv4.SubmitTransactionResponse.Result.FAILED: {
-                            result.Errors = errorsFromProto(resp.getTransactionError()!);
+                            result.Errors = errorsFromSolanaTx(tx, resp.getTransactionError()!);
                             break;
                         }
                         default:
